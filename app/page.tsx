@@ -7,7 +7,7 @@ import AudioPlayer from "@/components/main/audio-player";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import UserAvatar from "@/components/main/user-avatar";
-import { apiWithoutAuth } from "@/lib/api";
+import { apiWithAuth, apiWithoutAuth } from "@/lib/api";
 
 interface Message {
   content: string;
@@ -231,18 +231,14 @@ export default function VoiceAssistant() {
     // Determine message type based on current state
     const messageType = messages.length === 0 ? "first_message" : "follow_up";
     formData.append("message_type", messageType);
-
+    console.log("Form data",formData);
     try {
       // Send the audio to the backend API
-      const response = await axios.post(
-        "https://voice-agent.kognifi.ai/voice-agent",
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
-      );
+      const response = await apiWithAuth.post("/voice-agent/", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
 
       const data = response.data as ApiResponse;
 
