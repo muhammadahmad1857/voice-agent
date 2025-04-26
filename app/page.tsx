@@ -230,15 +230,16 @@ export default function VoiceAssistant() {
 
     // Determine message type based on current state
     const messageType = messages.length === 0 ? "first_message" : "follow_up";
-    formData.append("message_type", messageType);
     console.log("FormData created with:");
     console.log("- file: [Audio Blob]", audioBlob.size, "bytes");
-    console.log("- message_type:", messageType);
-        try {
+    try {
       // Send the audio to the backend API
       const response = await apiWithAuth.post("/voice-agent", formData, {
         headers: {
           "Content-Type": "multipart/form-data",
+        },
+        params: {
+          "message_type": messageType,
         },
       });
 
