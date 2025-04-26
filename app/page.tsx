@@ -48,7 +48,7 @@ export default function VoiceAssistant() {
         );
       } else {
         // Fallback to axios for browsers that don't support sendBeacon
-        apiWithoutAuth
+        apiWithAuth
           .post(
             "/clear-chat-history/",
             {},
@@ -358,18 +358,18 @@ export default function VoiceAssistant() {
                 }`}
               >
                 {message.sender == "ai" && (
-                <motion.div
-                  initial={{ scale: 0.8 }}
-                  animate={{ scale: [1, 1.05, 1] }}
-                  transition={{ duration: 0.5, repeat: 0 }}
-                  className="w-10 h-10 rounded-full overflow-hidden mr-2 flex-shrink-0"
-                >
+                  <motion.div
+                    initial={{ scale: 0.8 }}
+                    animate={{ scale: [1, 1.05, 1] }}
+                    transition={{ duration: 0.5, repeat: 0 }}
+                    className="w-10 h-10 rounded-full overflow-hidden mr-2 flex-shrink-0"
+                  >
                     <AudioPlayer
                       audioUrl={message.audioUrl || ""}
                       autoPlay={message.sender == "ai"}
                     />
-                </motion.div>
-                  )}
+                  </motion.div>
+                )}
                 <motion.div
                   whileHover={{ scale: 1.02 }}
                   className={`max-w-[80%] rounded-3xl p-4 ${
@@ -390,18 +390,18 @@ export default function VoiceAssistant() {
                   </p>
                 </motion.div>
                 {message.sender == "user" && (
-                <motion.div
-                  initial={{ scale: 0.8 }}
-                  animate={{ scale: [1, 1.05, 1] }}
-                  transition={{ duration: 0.5, repeat: 0 }}
-                  className="w-10 h-10 rounded-full overflow-hidden mr-2 flex-shrink-0"
-                >
+                  <motion.div
+                    initial={{ scale: 0.8 }}
+                    animate={{ scale: [1, 1.05, 1] }}
+                    transition={{ duration: 0.5, repeat: 0 }}
+                    className="w-10 h-10 rounded-full overflow-hidden mr-2 flex-shrink-0"
+                  >
                     <AudioPlayer
                       audioUrl={message.audioUrl || ""}
                       autoPlay={false}
                     />
-                </motion.div>
-                  )}
+                  </motion.div>
+                )}
               </motion.div>
             ))}
           </AnimatePresence>
