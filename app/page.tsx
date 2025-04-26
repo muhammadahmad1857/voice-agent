@@ -515,7 +515,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Mic, Loader2, Square, Play } from "lucide-react";
+import { Mic, Loader2, Play, Pause } from "lucide-react";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
@@ -529,10 +529,6 @@ interface Message {
   audioUrl?: string;
 }
 
-interface ErrorState {
-  isError: boolean;
-  message: string;
-}
 
 interface ApiResponse {
   user_transcribed_text: string;
@@ -541,25 +537,66 @@ interface ApiResponse {
   response_audio_url: { _url: string };
 }
 
-// Custom play button with fixed size and colored background
-function PlayButton({ url, autoPlay }: { url: string; autoPlay?: boolean }) {
+// PlayButton with play/pause and loading, and overlay for first AI message
+function PlayButton({ url, autoPlay = false, isFirst = false }: { url: string; autoPlay?: boolean; isFirst?: boolean }) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [loading, setLoading] = useState(autoPlay);
 
   useEffect(() => {
-    if (autoPlay) {
-      audioRef.current?.play();
-    }
+    const audio = audioRef.current;
+    if (!audio) return;
+    const onPlay = () => { setPlaying(true); setLoading(false); };
+    const onPause = () => setPlaying(false);
+    const onWaiting = () => setLoading(true);
+    audio.addEventListener("play", onPlay);
+    audio.addEventListener("pause", onPause);
+    audio.addEventListener("waiting", onWaiting);
+    if (autoPlay) audio.play();
+    return () => {
+      audio.removeEventListener("play", onPlay);
+      audio.removeEventListener("pause", onPause);
+      audio.removeEventListener("waiting", onWaiting);
+    };
   }, [autoPlay]);
 
+  const toggle = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (playing) audio.pause();
+    else audio.play();
+  };
+
   return (
-    <button
-      onClick={() => audioRef.current?.play()}
-      className="w-10 h-10 bg-blue-500 text-white rounded-full flex items-center justify-center"
-      aria-label="Play audio"
-    >
-      <Play size={20} />
+    <div className="relative">
+      <button
+        onClick={toggle}
+        className="w-10 h-10 bg-blue-500 text-white rounded-full flex items-center justify-center"
+        aria-label={playing ? "Pause audio" : "Play audio"}
+      >
+        {loading ? <Loader2 className="animate-spin" /> : playing ? <Pause size={20} /> : <Play size={20} />}
+      </button>
+      {isFirst && loading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-full">
+          <Loader2 className="h-6 w-6 text-white animate-spin" />
+        </div>
+      )}
       <audio ref={audioRef} src={url} />
-    </button>
+    </div>
+  );
+}
+
+// Inline loader bubble for follow-up processing
+function LoaderBubble() {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.8 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="flex items-center space-x-2 bg-[#2a2a2a] text-white rounded-3xl p-3"
+    >
+      <Loader2 className="animate-spin" />
+      <span>Processing...</span>
+    </motion.div>
   );
 }
 
@@ -567,87 +604,72 @@ export default function VoiceAssistant() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [error, setError] = useState<ErrorState>({ isError: false, message: "" });
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const [isSilent, setIsSilent] = useState(false);
   const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const silenceDetectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const silenceIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const silenceThreshold = 5;
-  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const chatRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll on new messages
+  // Auto-scroll
   useEffect(() => {
-    const el = chatContainerRef.current;
+    const el = chatRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
-  // Clear history on unload
+  // Clear on unload
   useEffect(() => {
-    const handleBeforeUnload = () => {
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon("https://voice-agent.kognifi.ai/clear-chat-history");
-      } else {
-        apiWithoutAuth.post("/clear-chat-history/", {}, { timeout: 300 }).catch(() => {});
-      }
+    const onUnload = () => {
+      navigator.sendBeacon("/clear-chat-history")
     };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("beforeunload", onUnload);
+    return () => window.removeEventListener("beforeunload", onUnload);
   }, []);
 
   const startRecording = async () => {
     try {
-      setError({ isError: false, message: "" });
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
       audioChunksRef.current = [];
 
       // Silence detection
-      const audioContext = new AudioContext();
-      audioContextRef.current = audioContext;
-      const analyser = audioContext.createAnalyser();
+      const ctx = new AudioContext();
+      audioContextRef.current = ctx;
+      const analyser = ctx.createAnalyser();
       analyserRef.current = analyser;
       analyser.fftSize = 256;
-      const source = audioContext.createMediaStreamSource(stream);
-      source.connect(analyser);
-      const bufferLen = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLen);
-
-      const detectSilence = () => {
-        if (!analyserRef.current) return;
-        analyserRef.current.getByteFrequencyData(dataArray);
-        const avg = dataArray.reduce((sum, v) => sum + v, 0) / bufferLen;
-        if (avg < silenceThreshold) {
-          if (!isSilent) {
-            setIsSilent(true);
-            silenceTimeoutRef.current = setTimeout(() => isRecording && stopRecording(), 2000);
-          }
-        } else if (isSilent) {
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const detect = () => {
+        analyser.getByteFrequencyData(data);
+        const avg = data.reduce((a, b) => a + b, 0) / data.length;
+        if (avg < silenceThreshold && !isSilent) {
+          setIsSilent(true);
+          silenceTimeoutRef.current = setTimeout(() => stopRecording(), 2000);
+        } else if (avg >= silenceThreshold && isSilent) {
           clearTimeout(silenceTimeoutRef.current!);
           setIsSilent(false);
         }
       };
+      silenceIntervalRef.current = setInterval(detect, 100);
 
-      silenceDetectionIntervalRef.current = setInterval(detectSilence, 100);
-
-      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
-      mediaRecorder.onstop = () => {
+      recorder.ondataavailable = (e) => e.data.size > 0 && audioChunksRef.current.push(e.data);
+      recorder.onstop = () => {
         processAudio();
-        audioContextRef.current?.close();
-        clearTimeout(silenceTimeoutRef.current!);
-        clearInterval(silenceDetectionIntervalRef.current!);
+        ctx.close();
+        clearInterval(silenceIntervalRef.current!);
         stream.getTracks().forEach((t) => t.stop());
       };
 
-      mediaRecorder.start();
+      recorder.start();
       setIsRecording(true);
+      setIsProcessing(true);
     } catch {
       const msg = "Could not access microphone. Please check permissions.";
-      setError({ isError: true, message: msg });
       toast.error(msg);
     }
   };
@@ -656,69 +678,45 @@ export default function VoiceAssistant() {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
-      setIsProcessing(true);
-      setIsSilent(false);
     }
   };
 
   const processAudio = async () => {
     const blob = new Blob(audioChunksRef.current, { type: "audio/wav" });
     const fd = new FormData();
-    fd.append("file", blob, "recording.wav");
+    fd.append("file", blob);
     const type = messages.length === 0 ? "first_message" : "follow_up";
     try {
-      const res = await apiWithAuth.post<ApiResponse>("/voice-agent", fd, {
-        headers: { "Content-Type": "multipart/form-data" },
-        params: { message_type: type },
-      });
+      const res = await apiWithAuth.post<ApiResponse>("/voice-agent", fd, { params: { message_type: type } });
       const data = res.data;
       const now = new Date();
-      const time = `${now.getHours()}:${now.getMinutes().toString().padStart(2, "0")}`;
+      const timestamp = `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`;
       setMessages((prev) => [
         ...prev,
-        { sender: "user", content: data.user_transcribed_text, timestamp: time, audioUrl: data.user_audio._url },
-        { sender: "ai", content: data.assistant_response, timestamp: time, audioUrl: data.response_audio_url._url },
+        { sender: 'user', content: data.user_transcribed_text, timestamp, audioUrl: data.user_audio._url },
+        { sender: 'ai', content: data.assistant_response, timestamp, audioUrl: data.response_audio_url._url },
       ]);
-      setIsProcessing(false);
     } catch (e) {
-      let msg = "Failed to process audio.";
+      let msg = 'Failed to process audio.';
       if (axios.isAxiosError(e) && e.response?.data?.detail) msg = e.response.data.detail;
-      setError({ isError: true, message: msg });
-      setIsProcessing(false);
       toast.error(msg);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
-  const clearChat = () => {
+  const clearChat = async () => {
     setMessages([]);
-    setError({ isError: false, message: "" });
-    apiWithoutAuth.post("/clear-chat-history").catch(() => {});
+    await apiWithoutAuth.post("/clear-chat-history")
     toast.success("Conversation cleared.");
   };
 
-  const sendLastMessage = async () => {
-    setIsProcessing(true);
-    const fd = new FormData();
-    fd.append("message_type", "last_message");
-    fd.append("file", new Blob([""], { type: "audio/wav" }), "empty.wav");
-    try {
-      await apiWithAuth.post("/voice-agent", fd, { headers: { "Content-Type": "multipart/form-data" } });
-      setIsProcessing(false);
-      toast.success("Conversation ended.");
-    } catch (e) {
-      let msg = "Failed to end conversation.";
-      if (axios.isAxiosError(e) && e.response?.data?.detail) msg = e.response.data.detail;
-      setError({ isError: true, message: msg });
-      setIsProcessing(false);
-      toast.error(msg);
-    }
-  };
 
   useEffect(() => () => {
     clearTimeout(silenceTimeoutRef.current!);
-    clearInterval(silenceDetectionIntervalRef.current!);
+    clearInterval(silenceIntervalRef.current!);
     audioContextRef.current?.close();
-    if (mediaRecorderRef.current && isRecording) mediaRecorderRef.current.stop();
+    mediaRecorderRef.current?.stop();
   }, [isRecording]);
 
   return (
@@ -728,16 +726,7 @@ export default function VoiceAssistant() {
         <UserAvatar />
       </header>
 
-      {isProcessing && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-[#2a2a2a] p-8 rounded-xl flex flex-col items-center">
-            <Loader2 className="h-12 w-12 animate-spin text-white mb-4" />
-            <p className="text-lg font-medium">Processing your request...</p>
-          </motion.div>
-        </div>
-      )}
-
-      <div ref={chatContainerRef} className="flex-1 p-4 overflow-y-auto space-y-4">
+      <div ref={chatRef} className="flex-1 p-4 overflow-y-auto space-y-4">
         {messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <p className="text-gray-400">Say something to start the conversation</p>
@@ -745,18 +734,33 @@ export default function VoiceAssistant() {
         ) : (
           <AnimatePresence initial={false}>
             {messages.map((msg, idx) => (
-              <motion.div key={idx} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: idx * 0.05 }} className={`flex ${msg.sender === "user" ? "justify-end" : "justify-start"}`}>
+              <motion.div
+                key={idx}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: idx * 0.05 }}
+                className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
                 <div className="max-w-[80%] flex items-center space-x-2">
                   {msg.audioUrl && (
-                    <PlayButton url={msg.audioUrl} autoPlay={msg.sender === "ai" && idx === messages.length - 1} />
+                    <PlayButton
+                      url={msg.audioUrl}
+                      autoPlay={msg.sender === 'ai' && idx === messages.length - 1}
+                      isFirst={idx === 1 && msg.sender === 'ai'}
+                    />
                   )}
-                  <div className={`rounded-3xl p-4 ${msg.sender === "user" ? "bg-[#4285F4] text-white" : "bg-[#2a2a2a] text-white"}`}>
+                  <div className={`rounded-3xl p-4 ${msg.sender === 'user' ? 'bg-[#4285F4] text-white' : 'bg-[#2a2a2a] text-white'}`}>                 
                     <p>{msg.content}</p>
                     <p className="text-xs mt-1 text-right text-white/70">{msg.timestamp}</p>
                   </div>
                 </div>
               </motion.div>
             ))}
+            {isProcessing && (
+              <div className="flex justify-start">
+                <LoaderBubble />
+              </div>
+            )}
           </AnimatePresence>
         )}
       </div>
@@ -768,12 +772,12 @@ export default function VoiceAssistant() {
           animate={isRecording ? { scale: [1, 1.1, 1], transition: { repeat: Infinity, duration: 1.5 } } : {}}
           onClick={() => (isRecording ? stopRecording() : startRecording())}
           disabled={isProcessing}
-          aria-label={isRecording ? "Stop recording" : "Start recording"}
+          aria-label={isRecording ? 'Stop recording' : 'Start recording'}
           className={`w-16 h-16 rounded-full flex items-center justify-center text-white cursor-pointer ${
-            isRecording ? "bg-red-500 border-2 border-red-600" : "bg-[#121212] border-2 border-[#4285F4]"
-          }`}
+            isRecording ? 'bg-red-500 border-2 border-red-600' : 'bg-[#121212] border-2 border-[#4285F4]'}
+          `}
         >
-          {isProcessing ? <Loader2 className="h-8 w-8 animate-spin" /> : isRecording ? <Square size={24} /> : <Mic size={28} />}
+          {isRecording ? <Mic size={28} /> : <Mic size={28} />}
         </motion.button>
       </div>
 
@@ -781,9 +785,7 @@ export default function VoiceAssistant() {
         <motion.button whileHover={{ scale: 1.05, backgroundColor: "#3a3a3a" }} whileTap={{ scale: 0.95 }} onClick={clearChat} disabled={isProcessing || messages.length === 0} className="bg-[#2a2a2a] text-white px-6 py-3 rounded-full">
           Clear Chat
         </motion.button>
-        <motion.button whileHover={{ scale: 1.05, backgroundColor: "#3a3a3a" }} whileTap={{ scale: 0.95 }} onClick={sendLastMessage} disabled={isProcessing || messages.length === 0} className="bg-[#2a2a2a] text-white px-6 py-3 rounded-full">
-          End Conversation
-        </motion.button>
+        
       </div>
     </div>
   );
