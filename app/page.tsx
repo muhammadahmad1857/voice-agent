@@ -26,7 +26,7 @@ interface ErrorState {
 interface ApiResponse {
   user_transcribed_text: string;
   assistant_response: string;
-  user_audio_url: { _url: string };
+  user_audio: { _url: string };
   response_audio_url: { _url: string };
 }
 
@@ -259,7 +259,7 @@ export default function VoiceAssistant() {
         content: data.user_transcribed_text || "Could not transcribe audio",
         sender: "user",
         timestamp: formattedTime,
-        audioUrl: data.user_audio_url?._url,
+        audioUrl: data.user_audio?._url,
       };
 
       // Add AI response
