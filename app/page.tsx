@@ -76,7 +76,9 @@ export default function VoiceAssistant() {
 
   const startRecording = async () => {
     try {
-      const globalAudio = (window as any).__currentAudio as HTMLAudioElement | undefined;
+      const globalAudio = (window as any).__currentAudio as
+        | HTMLAudioElement
+        | undefined;
       if (globalAudio) {
         globalAudio.pause();
         delete (window as any).__currentAudio;
@@ -344,7 +346,7 @@ export default function VoiceAssistant() {
       )}
 
       {/* Chat Area */}
-      <div className="flex-1 p-4 overflow-y-auto space-y-4">
+      <div className="flex-1 p-4 overflow-y-auto max-h-[calc(100vh-200px)] space-y-4">
         {messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <p className="text-gray-400">
