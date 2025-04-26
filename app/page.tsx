@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState, useRef, useEffect } from "react";
@@ -75,6 +76,11 @@ export default function VoiceAssistant() {
 
   const startRecording = async () => {
     try {
+      const globalAudio = (window as any).__currentAudio as HTMLAudioElement | undefined;
+      if (globalAudio) {
+        globalAudio.pause();
+        delete (window as any).__currentAudio;
+      }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;

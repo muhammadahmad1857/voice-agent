@@ -1,140 +1,132 @@
-"use client"
-
-import { useState, useRef, useEffect } from "react"
-import { Play, Pause, Loader2 } from "lucide-react"
-import { motion } from "framer-motion"
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import React, { useRef, useState, useEffect } from "react";
+import { Play, Pause, Loader2 } from "lucide-react";
+import { motion } from "framer-motion";
 
 interface AudioPlayerProps {
-  audioUrl: string
-  autoPlay?: boolean
+  audioUrl: string;
+  autoPlay?: boolean;
 }
 
-export default function AudioPlayer({ audioUrl, autoPlay = false }: AudioPlayerProps) {
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [isLoaded, setIsLoaded] = useState(false)
-  const [isBuffering, setIsBuffering] = useState(true)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-  const [audioLevel, setAudioLevel] = useState(0)
-  const animationRef = useRef<number | null>(null)
-
-  useEffect(() => {
-    let fixedAudioUrl = audioUrl;
-
-    // If the URL starts with "http", replace it with "https"
-    if (fixedAudioUrl.startsWith("http://")) {
-      fixedAudioUrl = fixedAudioUrl.replace("http://", "https://");
-      console.log('Updated audio URL:', fixedAudioUrl); // Optional: Log to confirm the change
-    }
-
-    const audio = new Audio(fixedAudioUrl);
-    audioRef.current = audio
-
-    audio.onloadeddata = () => {
-      setIsLoaded(true)
-      setIsBuffering(false)
-      if (autoPlay) {
-        playAudio()
-      }
-    }
-
-    audio.onwaiting = () => setIsBuffering(true)
-    audio.onplaying = () => {
-      setIsBuffering(false)
-      setIsPlaying(true)
-    }
-    audio.onended = () => {
-      setIsPlaying(false)
-      if (animationRef.current) cancelAnimationFrame(animationRef.current)
-      setAudioLevel(0)
-    }
-    audio.onerror = () => {
-      setIsBuffering(false)
-      setIsLoaded(false)
-      console.error("Error loading audio:", audio.error)
-    }
-
-    const handleGlobalAudioStop = () => {
-      if (isPlaying && audioRef.current) {
-        audioRef.current.pause()
-        setIsPlaying(false)
-        if (animationRef.current) cancelAnimationFrame(animationRef.current)
-      }
-    }
-
-    window.addEventListener("stop-all-audio", handleGlobalAudioStop)
-
-    return () => {
-      if (audio) {
-        audio.pause()
-        audio.src = ""
-        audio.onloadeddata = null
-        audio.onwaiting = null
-        audio.onplaying = null
-        audio.onended = null
-        audio.onerror = null
-      }
-      window.removeEventListener("stop-all-audio", handleGlobalAudioStop)
-      if (animationRef.current) cancelAnimationFrame(animationRef.current)
-    }
-  }, [audioUrl, autoPlay])
-
-  const playAudio = () => {
-    if (audioRef.current && isLoaded) {
-      const stopEvent = new Event("stop-all-audio")
-      window.dispatchEvent(stopEvent)
-      audioRef.current.play().then(() => {
-        setIsPlaying(true)
-        animateAudioLevel()
-      }).catch(err => {
-        console.error("Failed to play audio:", err)
-        setIsBuffering(false)
-      })
-    }
-  }
-
-  const pauseAudio = () => {
-    if (audioRef.current) {
-      audioRef.current.pause()
-      setIsPlaying(false)
-      if (animationRef.current) cancelAnimationFrame(animationRef.current)
-    }
-  }
-
-  const togglePlayPause = () => {
-    if (isPlaying) pauseAudio()
-    else playAudio()
-  }
+const AudioPlayer: React.FC<AudioPlayerProps> = ({
+  audioUrl,
+  autoPlay = false,
+}) => {
+  const audioRef = useRef<HTMLAudioElement>(new Audio());
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(true);
+  const [audioLevel, setAudioLevel] = useState(0);
+  const animationRef = useRef<number | null>(null);
 
   const animateAudioLevel = () => {
-    if (!isPlaying) return
-    setAudioLevel(Math.random() * 0.5 + 0.5)
-    animationRef.current = requestAnimationFrame(animateAudioLevel)
-  }
+    if (!isPlaying) return;
+    setAudioLevel(Math.random() * 0.5 + 0.5);
+    animationRef.current = requestAnimationFrame(animateAudioLevel);
+  };
+
+  const playAudio = () => {
+    // Pause any other global audio
+    const globalAudio = (window as any).__currentAudio as
+      | HTMLAudioElement
+      | undefined;
+    if (globalAudio && globalAudio !== audioRef.current) {
+      globalAudio.pause();
+    }
+    // Mark this as the global audio
+    (window as any).__currentAudio = audioRef.current;
+
+    // Start playback
+    setIsBuffering(true);
+    audioRef.current
+      .play()
+      .catch((err) => console.error("Failed to play audio:", err));
+  };
+
+  const pauseAudio = () => {
+    audioRef.current.pause();
+  };
+
+  const togglePlayPause = () => {
+    if (isPlaying) pauseAudio();
+    else playAudio();
+  };
+
+  // Handlers for audio element events
+  const handlePlaying = () => {
+    setIsBuffering(false);
+    setIsPlaying(true);
+    animateAudioLevel();
+  };
+
+  const handlePause = () => {
+    setIsBuffering(false);
+    setIsPlaying(false);
+    // Clear global audio reference if it's this one
+    if ((window as any).__currentAudio === audioRef.current) {
+      delete (window as any).__currentAudio;
+    }
+    // Stop animation
+    if (animationRef.current) cancelAnimationFrame(animationRef.current);
+  };
+
+  useEffect(() => {
+    // Ensure HTTPS
+    const fixedUrl = audioUrl.replace(/^http:\/\//, "https://");
+    const audio = audioRef.current;
+    audio.src = fixedUrl;
+
+    // Attach event listeners
+    audio.oncanplay = () => {
+      setIsBuffering(false);
+      if (autoPlay) playAudio();
+    };
+    audio.onwaiting = () => setIsBuffering(true);
+    audio.onplaying = handlePlaying;
+    audio.onpause = handlePause;
+    audio.onended = handlePause;
+    audio.onerror = () => {
+      console.error("Error loading audio:", audio.error);
+      setIsBuffering(false);
+    };
+
+    return () => {
+      // Cleanup listeners
+      audio.oncanplay = null;
+      audio.onwaiting = null;
+      audio.onplaying = null;
+      audio.onpause = null;
+      audio.onended = null;
+      audio.onerror = null;
+      // Stop animation if still running
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    };
+  }, [audioUrl, autoPlay]);
 
   return (
     <motion.div
       whileHover={{ scale: 1.1 }}
       whileTap={{ scale: 0.95 }}
-      className="w-10 h-10 rounded-full bg-[#1e1e1e] flex items-center justify-center cursor-pointer relative overflow-hidden"
       onClick={togglePlayPause}
+      className="relative w-10 h-10 rounded-full bg-[#1e1e1e] flex items-center justify-center cursor-pointer overflow-hidden"
+      aria-label={isPlaying ? "Pause audio" : "Play audio"}
     >
-      <div className="absolute inset-0 bg-gradient-to-br from-purple-800 to-black opacity-80"></div>
+      {isBuffering ? (
+        <Loader2 className="h-5 w-5 animate-spin text-white" />
+      ) : isPlaying ? (
+        <Pause className="h-5 w-5 text-white" />
+      ) : (
+        <Play className="h-5 w-5 text-white" />
+      )}
+
       {isPlaying && (
         <motion.div
           className="absolute inset-0 bg-purple-500 opacity-30"
           animate={{ scale: [1, audioLevel * 1.2, 1] }}
-          transition={{ repeat: Number.POSITIVE_INFINITY, duration: 1, ease: "easeInOut" }}
+          transition={{ repeat: Infinity, duration: 1, ease: "easeInOut" }}
         />
       )}
-      <div className="relative z-10">
-        {isBuffering ? (
-          <Loader2 className="h-5 w-5 text-white animate-spin" />
-        ) : isPlaying ? (
-          <Pause className="h-5 w-5 text-white" />
-        ) : (
-          <Play className="h-5 w-5 text-white" />
-        )}
-      </div>
     </motion.div>
-  )
-}
+  );
+};
+
+export default AudioPlayer;
