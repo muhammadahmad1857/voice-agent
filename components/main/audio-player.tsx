@@ -118,134 +118,149 @@
 //     </motion.div>
 //   )
 // }
+"use client"
 
-"use client";
-
-import { useState, useRef, useEffect } from "react";
-import { Play, Pause, Loader2 } from "lucide-react";
-import { motion } from "framer-motion";
+import { useState, useRef, useEffect } from "react"
+import { Play, Pause, Loader2 } from "lucide-react"
+import { motion } from "framer-motion"
 
 interface AudioPlayerProps {
-  audioUrl: string;
-  autoPlay?: boolean;
-  onPlay?: () => void;
+  audioUrl: string
+  autoPlay?: boolean
+  onPlay?: () => void
 }
 
-export default function AudioPlayer({
-  audioUrl,
-  autoPlay = false,
-  onPlay,
-}: AudioPlayerProps) {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [isBuffering, setIsBuffering] = useState(true);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [audioLevel, setAudioLevel] = useState(0);
-  const animationRef = useRef<number | null>(null);
+export default function AudioPlayer({ audioUrl, autoPlay = false, onPlay }: AudioPlayerProps) {
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [isLoaded, setIsLoaded] = useState(false)
+  const [isBuffering, setIsBuffering] = useState(true)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [audioLevel, setAudioLevel] = useState(0)
+  const animationRef = useRef<number | null>(null)
 
   useEffect(() => {
-    if (!audioRef.current) {
-      audioRef.current = new Audio(audioUrl);
+    // Create new audio element
+    const audio = new Audio(audioUrl)
+    audioRef.current = audio
 
-      audioRef.current.onloadeddata = () => {
-        setIsLoaded(true);
-        setIsBuffering(false);
-        if (autoPlay) {
-          playAudio();
-        }
-      };
-
-      audioRef.current.onwaiting = () => {
-        setIsBuffering(true);
-      };
-
-      audioRef.current.onplaying = () => {
-        setIsBuffering(false);
-      };
-
-      audioRef.current.onended = () => {
-        setIsPlaying(false);
-        if (animationRef.current) {
-          cancelAnimationFrame(animationRef.current);
-        }
-        setAudioLevel(0);
-      };
+    // Set up event listeners
+    audio.onloadeddata = () => {
+      setIsLoaded(true)
+      setIsBuffering(false)
+      if (autoPlay) {
+        playAudio()
+      }
     }
 
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.src = "";
-        audioRef.current = null;
-      }
+    audio.onwaiting = () => {
+      setIsBuffering(true)
+    }
+
+    audio.onplaying = () => {
+      setIsBuffering(false)
+      setIsPlaying(true)
+    }
+
+    audio.onended = () => {
+      setIsPlaying(false)
       if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
+        cancelAnimationFrame(animationRef.current)
       }
-    };
-  }, [audioUrl, autoPlay]);
+      setAudioLevel(0)
+    }
+
+    audio.onerror = () => {
+      setIsBuffering(false)
+      setIsLoaded(false)
+      console.error("Error loading audio:", audio.error)
+    }
+
+    // Clean up function
+    return () => {
+      if (audio) {
+        audio.pause()
+        audio.src = ""
+
+        // Remove all event listeners
+        audio.onloadeddata = null
+        audio.onwaiting = null
+        audio.onplaying = null
+        audio.onended = null
+        audio.onerror = null
+      }
+
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current)
+      }
+    }
+  }, [audioUrl, autoPlay])
 
   // Register this audio player with the global audio manager
   useEffect(() => {
     const handleGlobalAudioStop = () => {
       if (isPlaying && audioRef.current) {
-        audioRef.current.pause();
-        setIsPlaying(false);
+        audioRef.current.pause()
+        setIsPlaying(false)
         if (animationRef.current) {
-          cancelAnimationFrame(animationRef.current);
+          cancelAnimationFrame(animationRef.current)
         }
       }
-    };
+    }
 
-    window.addEventListener("stop-all-audio", handleGlobalAudioStop);
+    window.addEventListener("stop-all-audio", handleGlobalAudioStop)
 
     return () => {
-      window.removeEventListener("stop-all-audio", handleGlobalAudioStop);
-    };
-  }, [isPlaying]);
+      window.removeEventListener("stop-all-audio", handleGlobalAudioStop)
+    }
+  }, [isPlaying])
 
   const playAudio = () => {
     if (audioRef.current && isLoaded) {
       // Dispatch event to stop all other playing audio
-      const stopEvent = new Event("stop-all-audio");
-      window.dispatchEvent(stopEvent);
+      const stopEvent = new Event("stop-all-audio")
+      window.dispatchEvent(stopEvent)
 
       // Then play this audio
-      audioRef.current.play();
-      setIsPlaying(true);
-      animateAudioLevel();
-
-      if (onPlay) {
-        onPlay();
-      }
+      audioRef.current
+        .play()
+        .then(() => {
+          setIsPlaying(true)
+          animateAudioLevel()
+          if (onPlay) onPlay()
+        })
+        .catch((err) => {
+          console.error("Failed to play audio:", err)
+          setIsBuffering(false)
+        })
     }
-  };
+  }
 
   const pauseAudio = () => {
     if (audioRef.current) {
-      audioRef.current.pause();
-      setIsPlaying(false);
+      audioRef.current.pause()
+      setIsPlaying(false)
       if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
+        cancelAnimationFrame(animationRef.current)
       }
     }
-  };
+  }
 
   const togglePlayPause = () => {
     if (isPlaying) {
-      pauseAudio();
+      pauseAudio()
     } else {
-      playAudio();
+      playAudio()
     }
-  };
+  }
 
   const animateAudioLevel = () => {
-    if (!isPlaying) return;
+    if (!isPlaying) return
 
     // Simulate audio level for visualization
-    setAudioLevel(Math.random() * 0.5 + 0.5); // Random value between 0.5 and 1
+    setAudioLevel(Math.random() * 0.5 + 0.5) // Random value between 0.5 and 1
 
-    animationRef.current = requestAnimationFrame(animateAudioLevel);
-  };
+    animationRef.current = requestAnimationFrame(animateAudioLevel)
+  }
 
   return (
     <motion.div
@@ -254,8 +269,8 @@ export default function AudioPlayer({
       className="w-10 h-10 rounded-full bg-[#1e1e1e] flex items-center justify-center cursor-pointer relative overflow-hidden"
       onClick={togglePlayPause}
     >
-      {/* Clean background with gradient */}
-      <div className="absolute inset-0 bg-gradient-radial from-purple-900 via-indigo-900 to-black opacity-80"></div>
+      {/* Simple gradient background */}
+      <div className="absolute inset-0 bg-gradient-to-br from-purple-800 to-black opacity-80"></div>
 
       {/* Audio visualization */}
       {isPlaying && (
@@ -283,5 +298,5 @@ export default function AudioPlayer({
         )}
       </div>
     </motion.div>
-  );
+  )
 }

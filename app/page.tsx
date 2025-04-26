@@ -510,56 +510,53 @@
 //     </div>
 //   );
 // }
+"use client"
 
-"use client";
-
-import { useState, useRef, useEffect } from "react";
-import { Mic, Loader2, Square } from 'lucide-react';
-import axios from "axios";
-import AudioPlayer from "@/components/main/audio-player";
-import { motion, AnimatePresence } from "framer-motion";
-import { toast } from "sonner";
-import UserAvatar from "@/components/main/user-avatar";
-import { apiWithAuth, apiWithoutAuth } from "@/lib/api";
+import { useState, useRef, useEffect } from "react"
+import { Mic, Loader2, Square } from "lucide-react"
+import axios from "axios"
+import AudioPlayer from "@/components/main/audio-player"
+import { motion, AnimatePresence } from "framer-motion"
+import { toast } from "sonner"
+import UserAvatar from "@/components/main/user-avatar"
+import { apiWithAuth, apiWithoutAuth } from "@/lib/api"
 
 interface Message {
-  content: string;
-  sender: "user" | "ai";
-  timestamp: string;
-  audioUrl?: string;
+  content: string
+  sender: "user" | "ai"
+  timestamp: string
+  audioUrl?: string
+  isProcessing?: boolean
 }
-
 
 // Define API response interface
 interface ApiResponse {
-  user_transcribed_text: string;
-  assistant_response: string;
-  user_audio: { _url: string };
-  response_audio_url: { _url: string };
+  user_transcribed_text: string
+  assistant_response: string
+  user_audio: { _url: string }
+  response_audio_url: { _url: string }
 }
 
 export default function VoiceAssistant() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [isRecording, setIsRecording] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([])
+  const [isRecording, setIsRecording] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
   
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const [isSilent, setIsSilent] = useState(false);
-  const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const silenceThreshold = 5; // Lowered threshold to make it more sensitive
-  const silenceDetectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
+  const [isSilent, setIsSilent] = useState(false)
+  const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const analyserRef = useRef<AnalyserNode | null>(null)
+  const silenceThreshold = 5 // Lowered threshold to make it more sensitive
+  const silenceDetectionIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   // Add this after the state declarations and before the startRecording function
   useEffect(() => {
     const handleBeforeUnload = () => {
       // Send request to clear chat history when page is closed or refreshed
       if (navigator.sendBeacon) {
-        navigator.sendBeacon(
-          "https://voice-agent.kognifi.ai/clear-chat-history"
-        );
+        navigator.sendBeacon("https://voice-agent.kognifi.ai/clear-chat-history")
       } else {
         // Fallback to axios for browsers that don't support sendBeacon
         apiWithoutAuth
@@ -569,268 +566,295 @@ export default function VoiceAssistant() {
             {
               // Setting timeout to a small value since the page is unloading
               timeout: 300,
-            }
+            },
           )
           .catch((err) => {
             // Silent catch as the page is unloading anyway
-            console.error("Failed to clear chat history:", err);
-          });
+            console.error("Failed to clear chat history:", err)
+          })
       }
-    };
+    }
 
     // Add event listener for beforeunload
-    window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("beforeunload", handleBeforeUnload)
 
     // Clean up event listener
     return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-    };
-  }, []);
+      window.removeEventListener("beforeunload", handleBeforeUnload)
+    }
+  }, [])
 
   const startRecording = async () => {
     try {
       // Stop all playing audio when starting to record
-      const stopEvent = new Event('stop-all-audio');
-      window.dispatchEvent(stopEvent);
-      
-      // Clear any previous errors
+      const stopEvent = new Event("stop-all-audio")
+      window.dispatchEvent(stopEvent)
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mediaRecorder = new MediaRecorder(stream)
+      mediaRecorderRef.current = mediaRecorder
+      audioChunksRef.current = []
 
       // Set up audio analysis for silence detection
-      const audioContext = new AudioContext();
-      audioContextRef.current = audioContext;
-      const analyser = audioContext.createAnalyser();
-      analyserRef.current = analyser;
-      analyser.fftSize = 256;
+      const audioContext = new AudioContext()
+      audioContextRef.current = audioContext
+      const analyser = audioContext.createAnalyser()
+      analyserRef.current = analyser
+      analyser.fftSize = 256
 
-      const source = audioContext.createMediaStreamSource(stream);
-      source.connect(analyser);
+      const source = audioContext.createMediaStreamSource(stream)
+      source.connect(analyser)
 
-      const bufferLength = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
+      const bufferLength = analyser.frequencyBinCount
+      const dataArray = new Uint8Array(bufferLength)
 
-      // Function to detect silence using an interval instead of requestAnimationFrame
+      // Function to detect silence using an interval
       const detectSilence = () => {
-        if (!analyserRef.current) return;
+        if (!analyserRef.current) return
 
-        analyserRef.current.getByteFrequencyData(dataArray);
+        analyserRef.current.getByteFrequencyData(dataArray)
 
         // Calculate average volume
-        let sum = 0;
+        let sum = 0
         for (let i = 0; i < bufferLength; i++) {
-          sum += dataArray[i];
+          sum += dataArray[i]
         }
-        const average = sum / bufferLength;
+        const average = sum / bufferLength
+
+        // Debug log to help calibrate
+        console.log("Audio level:", average, "Threshold:", silenceThreshold)
 
         // Check if volume is below threshold (silence)
         if (average < silenceThreshold) {
           if (!isSilent) {
-            console.log("Silence detected, starting timer");
-            setIsSilent(true);
+            console.log("Silence detected, starting timer")
+            setIsSilent(true)
             // Start silence timer
             if (silenceTimeoutRef.current) {
-              clearTimeout(silenceTimeoutRef.current);
+              clearTimeout(silenceTimeoutRef.current)
             }
             silenceTimeoutRef.current = setTimeout(() => {
-              console.log("Stopping recording due to silence");
+              console.log("Stopping recording due to silence")
               if (isRecording) {
-                stopRecording();
+                stopRecording()
               }
-            }, 2000); // 2 seconds of silence
+            }, 2000) // 2 seconds of silence
           }
         } else {
           // If there's sound, clear the timeout and reset silence state
           if (isSilent) {
-            console.log("Sound detected, clearing timer");
-            setIsSilent(false);
+            console.log("Sound detected, clearing timer")
+            setIsSilent(false)
             if (silenceTimeoutRef.current) {
-              clearTimeout(silenceTimeoutRef.current);
-              silenceTimeoutRef.current = null;
+              clearTimeout(silenceTimeoutRef.current)
+              silenceTimeoutRef.current = null
             }
           }
         }
-      };
+      }
 
       // Start silence detection using an interval (more reliable than requestAnimationFrame)
-      silenceDetectionIntervalRef.current = setInterval(detectSilence, 100);
+      silenceDetectionIntervalRef.current = setInterval(detectSilence, 100)
 
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
+          audioChunksRef.current.push(event.data)
         }
-      };
+      }
 
       mediaRecorder.onstop = () => {
-        processAudio();
+        processAudio()
 
         // Clean up audio context and analyser
-        if (
-          audioContextRef.current &&
-          audioContextRef.current.state !== "closed"
-        ) {
-          audioContextRef.current.close();
+        if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+          audioContextRef.current.close()
         }
 
         // Clear any pending silence timeout
         if (silenceTimeoutRef.current) {
-          clearTimeout(silenceTimeoutRef.current);
-          silenceTimeoutRef.current = null;
+          clearTimeout(silenceTimeoutRef.current)
+          silenceTimeoutRef.current = null
         }
 
         // Clear silence detection interval
         if (silenceDetectionIntervalRef.current) {
-          clearInterval(silenceDetectionIntervalRef.current);
-          silenceDetectionIntervalRef.current = null;
+          clearInterval(silenceDetectionIntervalRef.current)
+          silenceDetectionIntervalRef.current = null
         }
 
         // Stop all tracks in the stream
-        stream.getTracks().forEach((track) => track.stop());
-      };
+        stream.getTracks().forEach((track) => track.stop())
+      }
 
-      mediaRecorder.start();
-      setIsRecording(true);
+      mediaRecorder.start()
+      setIsRecording(true)
     } catch (error) {
-      console.error("Error accessing microphone:", error);
-     
-      toast.error("Could not access microphone. Please check permissions.");
+      console.error("Error accessing microphone:", error)
+    
+      toast.error("Could not access microphone. Please check permissions.")
     }
-  };
+  }
 
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      setIsProcessing(true);
+      mediaRecorderRef.current.stop()
+      setIsRecording(false)
+      setIsProcessing(true)
 
       // Clear any pending silence timeout
       if (silenceTimeoutRef.current) {
-        clearTimeout(silenceTimeoutRef.current);
-        silenceTimeoutRef.current = null;
+        clearTimeout(silenceTimeoutRef.current)
+        silenceTimeoutRef.current = null
       }
 
       // Clear silence detection interval
       if (silenceDetectionIntervalRef.current) {
-        clearInterval(silenceDetectionIntervalRef.current);
-        silenceDetectionIntervalRef.current = null;
+        clearInterval(silenceDetectionIntervalRef.current)
+        silenceDetectionIntervalRef.current = null
       }
 
-      setIsSilent(false);
+      setIsSilent(false)
     }
-  };
+  }
 
   const processAudio = async () => {
     // Create audio blob from recorded chunks
-    const audioBlob = new Blob(audioChunksRef.current, { type: "audio/wav" });
+    const audioBlob = new Blob(audioChunksRef.current, { type: "audio/wav" })
 
     // Create form data to send to backend
-    const formData = new FormData();
-    formData.append("file", audioBlob, "recording.wav");
+    const formData = new FormData()
+    formData.append("file", audioBlob, "recording.wav")
 
     // Determine message type based on current state
-    const messageType = messages.length === 0 ? "first_message" : "follow_up";
-    
+    const messageType = messages.length === 0 ? "first_message" : "follow_up"
+    const isFirstMessage = messages.length === 0
+
     try {
+      // For first message, show full screen overlay
+      if (isFirstMessage) {
+        setIsProcessing(true)
+      } else {
+        // For subsequent messages, we'll show a local processing indicator
+        // in the chat UI instead of a full overlay
+        setMessages((prev) => [
+          ...prev,
+          {
+            content: "Processing your message...",
+            sender: "user",
+            timestamp: getCurrentTime(),
+            isProcessing: true,
+          },
+        ])
+      }
+
       // Send the audio to the backend API
       const response = await apiWithAuth.post("/voice-agent", formData, {
         headers: {
           "Content-Type": "multipart/form-data",
         },
         params: {
-          "message_type": messageType,
+          message_type: messageType,
         },
-      });
+      })
 
-      const data = response.data as ApiResponse;
+      const data = response.data as ApiResponse
 
       // Get current time for timestamp
-      const currentTime = new Date();
-      const hours = currentTime.getHours();
-      const minutes = currentTime.getMinutes();
-      const formattedTime = `${hours}:${
-        minutes < 10 ? "0" + minutes : minutes
-      }`;
+      const timestamp = getCurrentTime()
+
+      // If this is a subsequent message, remove the processing indicator
+      if (!isFirstMessage) {
+        setMessages((prev) => prev.filter((msg) => !msg.isProcessing))
+      }
 
       // Add user message with transcribed text from response
       const userMessage: Message = {
         content: data.user_transcribed_text || "Could not transcribe audio",
         sender: "user",
-        timestamp: formattedTime,
+        timestamp: timestamp,
         audioUrl: data.user_audio?._url,
-      };
+      }
 
       // Add AI response
       const aiResponse: Message = {
         content: data.assistant_response || "No response available",
         sender: "ai",
-        timestamp: formattedTime,
+        timestamp: timestamp,
         audioUrl: data.response_audio_url?._url,
-      };
-
-      setMessages((prev) => [...prev, userMessage, aiResponse]);
-      setIsProcessing(false);
-    } catch (error) {
-      console.error("Error processing audio:", error);
-
-      // Extract error details from response if available
-      let errorMessage = "Failed to process audio";
-      if (axios.isAxiosError(error) && error.response?.data?.detail) {
-        errorMessage = error.response.data.detail;
       }
 
-      setIsProcessing(false);
+      setMessages((prev) => [...prev, userMessage, aiResponse])
+      setIsProcessing(false)
+    } catch (error) {
+      console.error("Error processing audio:", error)
 
-      toast.error(errorMessage);
+      // Extract error details from response if available
+      let errorMessage = "Failed to process audio"
+      if (axios.isAxiosError(error) && error.response?.data?.detail) {
+        errorMessage = error.response.data.detail
+      }
+
+      // Remove processing message if it exists
+      if (!isFirstMessage) {
+        setMessages((prev) => prev.filter((msg) => !msg.isProcessing))
+      }
+
+      setIsProcessing(false)
+
+      toast.error(errorMessage)
     }
-  };
+  }
+
+  // Add this helper function after processAudio
+  const getCurrentTime = () => {
+    const currentTime = new Date()
+    const hours = currentTime.getHours()
+    const minutes = currentTime.getMinutes()
+    return `${hours}:${minutes < 10 ? "0" + minutes : minutes}`
+  }
 
   const clearChat = async () => {
     try {
       // Clear chat in the UI only
-      setMessages([]);
-      apiWithoutAuth.post("/clear-chat-history");
-      toast.success("Your conversation has been cleared.");
+      setMessages([])
+      apiWithoutAuth.post("/clear-chat-history")
+      toast.success("Your conversation has been cleared.")
     } catch (error) {
-      console.error("Failed to clear chat:", error);
+      console.error("Failed to clear chat:", error)
 
-      toast.error("Failed to clear chat");
+      toast.error("Failed to clear chat")
     }
-  };
+  }
 
   const handleMicButtonClick = () => {
     if (isRecording) {
-      stopRecording();
+      stopRecording()
     } else {
-      startRecording();
+      startRecording()
     }
-  };
+  }
 
   useEffect(() => {
     return () => {
       // Clean up on component unmount
       if (silenceTimeoutRef.current) {
-        clearTimeout(silenceTimeoutRef.current);
+        clearTimeout(silenceTimeoutRef.current)
       }
 
       if (silenceDetectionIntervalRef.current) {
-        clearInterval(silenceDetectionIntervalRef.current);
+        clearInterval(silenceDetectionIntervalRef.current)
       }
 
-      if (
-        audioContextRef.current &&
-        audioContextRef.current.state !== "closed"
-      ) {
-        audioContextRef.current.close();
+      if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+        audioContextRef.current.close()
       }
 
       if (mediaRecorderRef.current && isRecording) {
-        mediaRecorderRef.current.stop();
+        mediaRecorderRef.current.stop()
       }
-    };
-  }, [isRecording]);
+    }
+  }, [isRecording])
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -858,9 +882,7 @@ export default function VoiceAssistant() {
       <div className="flex-1 p-4 overflow-y-auto space-y-4">
         {messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
-            <p className="text-gray-400">
-              Say something to start the conversation
-            </p>
+            <p className="text-gray-400">Say something to start the conversation</p>
           </div>
         ) : (
           <AnimatePresence initial={false}>
@@ -870,36 +892,32 @@ export default function VoiceAssistant() {
                 initial={{ opacity: 0, y: 20, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 transition={{ duration: 0.3, delay: index * 0.1 }}
-                className={`flex ${
-                  message.sender === "user" ? "justify-end" : "justify-start"
-                }`}
+                className={`flex ${message.sender === "user" ? "justify-end" : "justify-start"}`}
               >
                 {message.sender === "ai" && message.audioUrl && (
                   <div className="mr-2 flex-shrink-0">
-                    <AudioPlayer
-                      audioUrl={message.audioUrl}
-                      autoPlay={index === messages.length - 1}
-                    />
+                    <AudioPlayer audioUrl={message.audioUrl} autoPlay={index === messages.length - 1} />
                   </div>
                 )}
                 <motion.div
                   whileHover={{ scale: 1.02 }}
                   className={`max-w-[80%] rounded-3xl p-4 ${
-                    message.sender === "user"
-                      ? "bg-[#4285F4] text-white"
-                      : "bg-[#2a2a2a] text-white"
+                    message.isProcessing
+                      ? "bg-gray-700 text-white"
+                      : message.sender === "user"
+                        ? "bg-[#4285F4] text-white"
+                        : "bg-[#2a2a2a] text-white"
                   }`}
                 >
-                  <p>{message.content}</p>
-                  <p
-                    className={`text-xs mt-1 text-right ${
-                      message.sender === "user"
-                        ? "text-white/70"
-                        : "text-white/70"
-                    }`}
-                  >
-                    {message.timestamp}
-                  </p>
+                  {message.isProcessing ? (
+                    <div className="flex items-center space-x-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <p>{message.content}</p>
+                    </div>
+                  ) : (
+                    <p>{message.content}</p>
+                  )}
+                  <p className={`text-xs mt-1 text-right text-white/70`}>{message.timestamp}</p>
                 </motion.div>
               </motion.div>
             ))}
@@ -924,9 +942,7 @@ export default function VoiceAssistant() {
               : {}
           }
           className={`w-16 h-16 rounded-full flex items-center justify-center text-white cursor-pointer ${
-            isRecording
-              ? "bg-red-500 border-2 border-red-600"
-              : "bg-[#121212] border-2 border-[#4285F4]"
+            isRecording ? "bg-red-500 border-2 border-red-600" : "bg-[#121212] border-2 border-[#4285F4]"
           }`}
           onClick={handleMicButtonClick}
           disabled={isProcessing}
@@ -955,5 +971,5 @@ export default function VoiceAssistant() {
         </motion.button>
       </div>
     </div>
-  );
+  )
 }
