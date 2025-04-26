@@ -1224,7 +1224,7 @@ export default function VoiceAssistant() {
         <UserAvatar />
       </header>
 
-      {isProcessing && (
+      {isProcessing && messages.length === 0 && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <motion.div
             initial={{ scale: 0.8, opacity: 0 }}
@@ -1270,7 +1270,14 @@ export default function VoiceAssistant() {
                       <p>{message.content}</p>
                     </div>
                   ) : (
-                    <p>{message.content}</p>
+                    <>
+                      <p>{message.content}</p>
+                      {message.audioUrl && message.sender === "user" && (
+                        <div className="mt-2">
+                          <AudioPlayer audioUrl={message.audioUrl} autoPlay={false} />
+                        </div>
+                      )}
+                    </>
                   )}
                   <p className="text-xs mt-1 text-right text-white/70">{message.timestamp}</p>
                 </motion.div>
