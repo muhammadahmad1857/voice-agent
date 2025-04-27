@@ -268,8 +268,8 @@ export default function VoiceAssistant() {
 
       // Extract error details from response if available
       let errorMessage = "Failed to process audio";
-      if (axios.isAxiosError(error) && error.response?.data?.detail) {
-        errorMessage = error.response.data.detail;
+      if (axios.isAxiosError(error) && error.response?.data?.error) {
+        errorMessage = error.response.data.error;
       }
 
       setIsProcessing(false);
