@@ -226,7 +226,7 @@ export default function VoiceAssistant() {
     console.log("- file: [Audio Blob]", audioBlob.size, "bytes");
     try {
       // Send the audio to the backend API
-      const response = await apiWithAuth.post("/voice-agent", formData, {
+      const response = await axios.post("/api/voice-agent", formData, {
         headers: {
           "Content-Type": "multipart/form-data",
         },
