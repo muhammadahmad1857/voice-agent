@@ -8,7 +8,7 @@ import AudioPlayer from "@/components/main/audio-player";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import UserAvatar from "@/components/main/user-avatar";
-import { apiWithAuth, apiWithoutAuth } from "@/lib/api";
+import { apiWithoutAuth } from "@/lib/api";
 
 interface Message {
   content: string;
@@ -49,7 +49,7 @@ export default function VoiceAssistant() {
         );
       } else {
         // Fallback to axios for browsers that don't support sendBeacon
-        apiWithAuth
+        apiWithoutAuth
           .post(
             "/clear-chat-history/",
             {},
